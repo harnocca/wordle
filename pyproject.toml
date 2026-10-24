@@ -1,0 +1,6 @@
+[project]
+name = "wordle"
+version = "0.1.0"
+description = "Stuff about wordle"
+requires-python = ">=3.14"
+dependencies = []
