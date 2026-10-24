@@ -19,19 +19,15 @@ typedef struct
 
 typedef void (*CalcFunc)(const char **guesses, Py_ssize_t g_size, const char **words, Py_ssize_t w_size, Entry *result);
 
-static char ascii_lower(char c)
-{
-    if (c >= 'A' && c <= 'Z')
-        return c + ('a' - 'A');
-
-    return c;
-}
-
-static bool get_ascii_word(PyObject *obj, const char **out, const char *name)
+/*
+ * Validate a Python string, copy it lowercased into `word`, and NUL-terminate.
+ * `word` must hold at least WORD_LENGTH + 1 bytes.
+ */
+static bool get_ascii_word(PyObject *obj, char *word, const char *id)
 {
     if (!PyUnicode_Check(obj))
     {
-        PyErr_Format(PyExc_TypeError, "%s must be a string", name);
+        PyErr_Format(PyExc_TypeError, "%s must be a string", id);
         return false;
     }
 
@@ -42,7 +38,7 @@ static bool get_ascii_word(PyObject *obj, const char **out, const char *name)
 
     if (length != WORD_LENGTH)
     {
-        PyErr_Format(PyExc_ValueError, "%s must contain exactly %d ASCII letters", name, WORD_LENGTH);
+        PyErr_Format(PyExc_ValueError, "%s must contain exactly %d ASCII letters", id, WORD_LENGTH);
         return false;
     }
 
@@ -53,34 +49,77 @@ static bool get_ascii_word(PyObject *obj, const char **out, const char *name)
         if (PyErr_Occurred())
             return false;
 
-        bool is_letter = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
-
-        if (!is_letter)
+        if (ch >= 'a' && ch <= 'z')
         {
-            PyErr_Format(PyExc_ValueError, "%s must contain only ASCII letters", name);
+            word[i] = (char)ch;
+        }
+        else if (ch >= 'A' && ch <= 'Z')
+        {
+            word[i] = (char)(ch + ('a' - 'A'));
+        }
+        else
+        {
+            PyErr_Format(PyExc_ValueError, "%s must contain only ASCII letters", id);
             return false;
         }
     }
 
-    *out = PyUnicode_AsUTF8(obj);
-
-    return *out != NULL;
+    word[WORD_LENGTH] = '\0';
+    return true;
 }
 
-static bool parse_strlist(const char **array, Py_ssize_t size, PyObject *pylist, const char *name)
+/*
+ * Parse a Python list of strings into a contiguous C buffer and an array of
+ * pointers into that buffer. Both outputs are owned by the caller and must be
+ * freed with PyMem_Free.
+ */
+static bool parse_strlist(Py_ssize_t size, PyObject *pylist, const char *id,
+                          const char ***words_ptr, char **head_ptr)
 {
+    *words_ptr = NULL;
+    *head_ptr = NULL;
+
+    if (size == 0)
+        return true;
+
+    char *head = PyMem_Malloc((size_t)size * (WORD_LENGTH + 1));
+
+    if (head == NULL)
+    {
+        PyErr_NoMemory();
+        return false;
+    }
+
+    const char **array = PyMem_Malloc((size_t)size * sizeof(const char *));
+
+    if (array == NULL)
+    {
+        PyMem_Free(head);
+        PyErr_NoMemory();
+        return false;
+    }
+
     for (Py_ssize_t i = 0; i < size; i++)
     {
         PyObject *item = PyList_GetItem(pylist, i);
 
         if (item == NULL)
-            return false;
+            goto error;
 
-        if (!get_ascii_word(item, &array[i], name))
-            return false;
+        array[i] = head + i * (WORD_LENGTH + 1);
+
+        if (!get_ascii_word(item, (char *)array[i], id))
+            goto error;
     }
 
+    *words_ptr = array;
+    *head_ptr = head;
     return true;
+
+error:
+    PyMem_Free(head);
+    PyMem_Free(array);
+    return false;
 }
 
 /*
@@ -88,58 +127,47 @@ static bool parse_strlist(const char **array, Py_ssize_t size, PyObject *pylist,
  *     0 = WRONG
  *     1 = POS
  *     2 = CORRECT
+ *
+ * The count table caps misplaced (yellow) letters to the number of times the
+ * letter actually appears in the answer after exact matches are consumed,
+ * which matches Wordle's duplicate-letter rule.
  */
 static void match_board(const char *guess, const char *word, int board[WORD_LENGTH])
 {
-    char remaining[WORD_LENGTH];
+    int counts[26] = {0};
 
+    /* First pass: mark exact matches and count remaining answer letters. */
     for (int i = 0; i < WORD_LENGTH; i++)
     {
-        board[i] = WRONG;
-        remaining[i] = ascii_lower(word[i]);
-    }
-
-    /* Exact matches */
-    for (int i = 0; i < WORD_LENGTH; i++)
-    {
-        if (remaining[i] == ascii_lower(guess[i]))
+        if (guess[i] == word[i])
         {
             board[i] = CORRECT;
-            remaining[i] = '\0';
+        }
+        else
+        {
+            board[i] = WRONG;
+            counts[word[i] - 'a']++;
         }
     }
 
-    /* Misplaced matches */
+    /* Second pass: assign yellows using the remaining letter counts. */
     for (int i = 0; i < WORD_LENGTH; i++)
     {
-        if (remaining[i] == '\0')
+        if (board[i] == CORRECT)
             continue;
 
-        for (int j = 0; j < WORD_LENGTH; j++)
+        int idx = guess[i] - 'a';
+
+        if (counts[idx] > 0)
         {
-            if (board[j] == WRONG && remaining[i] == ascii_lower(guess[j]))
-            {
-                board[j] = POS;
-                remaining[i] = '\0';
-                break;
-            }
+            board[i] = POS;
+            counts[idx]--;
         }
     }
 }
 
-/* Sums the board */
-static int board_score(const int board[WORD_LENGTH])
-{
-    int score = 0;
-
-    for (int i = 0; i < WORD_LENGTH; i++)
-        score += board[i];
-
-    return score;
-}
-
-/* Encodes the board into a base-3 integer */
-static int encode_board(const int board[WORD_LENGTH])
+/* Encodes the board into a base-3 integer. */
+static inline int encode_board(const int board[WORD_LENGTH])
 {
     int encoded = 0;
     int power = 1;
@@ -204,7 +232,8 @@ static void calc_points(const char **guesses, Py_ssize_t g_size, const char **wo
 
             match_board(guess, words[j], board);
 
-            points += board_score(board);
+            for (int k = 0; k < WORD_LENGTH; k++)
+                points += board[k];
         }
 
         result[i] = (Entry){guess, points};
@@ -221,13 +250,13 @@ static PyObject *method_match(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    const char *guess = NULL;
-    const char *word = NULL;
+    char guess[WORD_LENGTH + 1];
+    char word[WORD_LENGTH + 1];
 
-    if (!get_ascii_word(guess_obj, &guess, "guess"))
+    if (!get_ascii_word(guess_obj, guess, "guess"))
         return NULL;
 
-    if (!get_ascii_word(word_obj, &word, "word"))
+    if (!get_ascii_word(word_obj, word, "word"))
         return NULL;
 
     int board[WORD_LENGTH];
@@ -256,7 +285,7 @@ static PyObject *method_match(PyObject *self, PyObject *args)
     return tuple;
 }
 
-/* Shared wrapper for calc_entropy() and calc_points() */
+/* Shared wrapper for calc_entropy() and calc_points(). */
 static PyObject *method_calc_wrapper(PyObject *self, PyObject *args, CalcFunc calc_func)
 {
     PyObject *g_obj = NULL;
@@ -264,6 +293,11 @@ static PyObject *method_calc_wrapper(PyObject *self, PyObject *args, CalcFunc ca
 
     const char **guesses = NULL;
     const char **words = NULL;
+
+    /* Backing buffers returned by parse_strlist; freed with the pointer arrays. */
+    char *g_head = NULL;
+    char *w_head = NULL;
+
     Entry *entries = NULL;
     PyObject *dict = NULL;
 
@@ -288,38 +322,26 @@ static PyObject *method_calc_wrapper(PyObject *self, PyObject *args, CalcFunc ca
         return NULL;
     }
 
-    words = PyMem_Malloc((size_t)w_size * sizeof(*words));
-
-    if (words == NULL)
-    {
-        PyErr_NoMemory();
+    if (!parse_strlist(g_size, g_obj, "each guess", &guesses, &g_head))
         goto error;
-    }
+
+    if (!parse_strlist(w_size, w_obj, "each possible answer", &words, &w_head))
+        goto error;
 
     if (g_size > 0)
     {
-        guesses = PyMem_Malloc((size_t)g_size * sizeof(*guesses));
         entries = PyMem_Malloc((size_t)g_size * sizeof(*entries));
 
-        if (guesses == NULL || entries == NULL)
+        if (entries == NULL)
         {
             PyErr_NoMemory();
             goto error;
         }
     }
 
-    if (!parse_strlist(guesses, g_size, g_obj, "each guess"))
-    {
-        goto error;
-    }
-
-    if (!parse_strlist(words, w_size, w_obj, "each possible answer"))
-    {
-        goto error;
-    }
-
     calc_func(guesses, g_size, words, w_size, entries);
 
+    /* Build the result dictionary from the computed entries. */
     dict = PyDict_New();
 
     if (dict == NULL)
@@ -341,6 +363,8 @@ static PyObject *method_calc_wrapper(PyObject *self, PyObject *args, CalcFunc ca
         Py_DECREF(value);
     }
 
+    PyMem_Free(g_head);
+    PyMem_Free(w_head);
     PyMem_Free(guesses);
     PyMem_Free(words);
     PyMem_Free(entries);
@@ -349,6 +373,8 @@ static PyObject *method_calc_wrapper(PyObject *self, PyObject *args, CalcFunc ca
 
 error:
     Py_XDECREF(dict);
+    PyMem_Free(g_head);
+    PyMem_Free(w_head);
     PyMem_Free(guesses);
     PyMem_Free(words);
     PyMem_Free(entries);
