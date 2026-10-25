@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=74"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,3 +7,11 @@ name = "wordle-lib"
 version = "0.1.0"
 description = "A C extension for Wordle analysis"
 requires-python = ">=3.10"
+
+[tool.setuptools]
+py-modules = ["wordle_lib"]
+
+[[tool.setuptools.ext-modules]]
+name = "_wordle_lib"
+sources = ["wordle_lib.c"]
+libraries = ["m"]

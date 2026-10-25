@@ -3,4 +3,15 @@ name = "wordle"
 version = "0.1.0"
 description = "Stuff about wordle"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = ["wordle-lib", "rich"]
+
+[tool.uv.workspace]
+members = ["wordle-lib"]
+
+[tool.uv.sources]
+wordle-lib = { workspace = true, editable = false }
+
+[dependency-groups]
+dev = [
+    "setuptools>=84.2.1",
+]
