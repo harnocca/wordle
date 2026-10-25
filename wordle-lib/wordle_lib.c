@@ -73,8 +73,7 @@ static bool get_ascii_word(PyObject *obj, char *word, const char *id)
  * pointers into that buffer. Both outputs are owned by the caller and must be
  * freed with PyMem_Free.
  */
-static bool parse_strlist(Py_ssize_t size, PyObject *pylist, const char *id,
-                          const char ***words_ptr, char **head_ptr)
+static bool parse_strlist(Py_ssize_t size, PyObject *pylist, const char *id, const char ***words_ptr, char **head_ptr)
 {
     *words_ptr = NULL;
     *head_ptr = NULL;

@@ -1,0 +1,2 @@
+# clangd / clang-format configuration.
+BasedOnStyle: Microsoft
