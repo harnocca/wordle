@@ -78,7 +78,7 @@ Pick a dataset with `-l` / `-e` / `-p`. If you don't pick an action it does a
 top-10; `--rank` and `--lookup` take an optional count for how many entries to
 show on each side.
 
-![Entropy ranking output from the stats CLI](assets/analysis.png)
+![Entropy ranking output from the stats CLI](assets/stats.gif)
 
 ## The Game
 
@@ -99,7 +99,7 @@ There are three modes:
   The answer is unknown, but it keeps track of the candidate list and the best
   guesses.
 
-![The game in investigate mode, showing two guesses, the remaining possible answers, and the highest-entropy suggestion](assets/game.png)
+![The game in investigate mode, showing two guesses, the remaining possible answers, and the highest-entropy suggestion](assets/investigate.gif)
 
 ## Running it
 
