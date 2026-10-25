@@ -66,7 +66,7 @@ def render(game: Game, message: str = "") -> None:
     legend = Text.assemble(
         (" WRONG ", TILE_STYLES[WRONG]),
         "  ",
-        (" PRESENT ", TILE_STYLES[POS]),
+        (" MISPLACED ", TILE_STYLES[POS]),
         "  ",
         (" CORRECT ", TILE_STYLES[CORRECT]),
     )
@@ -83,7 +83,7 @@ def render(game: Game, message: str = "") -> None:
 
     count = len(game.candidates)
 
-    if count <= 20:
+    if count <= 15:
         candidate_text = Text(
             "   ".join(word.upper() for word in game.candidates)
             if count
