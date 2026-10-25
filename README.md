@@ -23,21 +23,23 @@ It includes:
 How often each letter shows up in the answer list. Duplicates within a word
 count once.
 
-```text
-freq(letter) = answers containing letter / total answers
-```
+$$
+\mathrm{freq}(\ell) = \frac{\text{answers containing } \ell}{\text{answers}}
+$$
 
 `e` is at the top with about 49%.
 
 ### Entropy
 
 For each guess, go through all the words in the answer list and produce the
-pattern. There are 3^5 - 5 = 238 possible patterns.
+pattern. There are $3^5 - 5 = 238$ possible patterns.
 
-```text
-H(guess) = -Σ p_i · log2(p_i)
-p_i      = answers producing pattern i / total answers
-```
+$$
+\begin{aligned}
+H(g) &= -\sum_i p_i \log_2 p_i \\
+p_i &= \frac{\text{answers producing pattern } i}{\text{total answers}}
+\end{aligned}
+$$
 
 Higher entropy means a more uniform distribution of each pattern, which
 introduces more information, and is measured in bits. It's the number the
@@ -48,9 +50,9 @@ terminal game uses when recommending a guess.
 Match the guess against every answer and add up the values, where gray = 0,
 yellow = 1, green = 2.
 
-```text
-P(guess) = Σ_answers Σ_tiles board(guess, answer)[tile]
-```
+$$
+P(g) = \sum_{w \in \text{answers}} \sum_{t \in \text{tiles}} \mathrm{board}(g, w)[t]
+$$
 
 Points are here because they're the intuitive gauge people think of when trying
 to tell whether an answer is good or not. It's easy to compute and fun to look
